@@ -33,5 +33,5 @@ void *amz_calloc(size_t s, size_t l)
 
 void amz_free(void *m) 
 {
-  if (m) free(m);
+  if (m != NULL) free(m);
 }

@@ -77,14 +77,18 @@ strbuf_cstr(struct strbuf *buf)
 void 
 strbuf_free(struct strbuf *buf)
 {
-  if (buf->buf) amz_free(buf->buf);
+  if (buf->buf != NULL) 
+    amz_free(buf->buf);
+  
   amz_free(buf);
 }
 
 void 
 strbuf_clear(struct strbuf *buf)
 {
-  if (buf->buf) amz_free(buf->buf);
+  if (buf->buf != NULL) 
+    amz_free(buf->buf);
+  
   buf->size = 0;
   buf->avail = 0;
   buf->buf = NULL;

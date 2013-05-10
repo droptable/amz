@@ -55,6 +55,7 @@ htmlent_decode(const char *html)
         
         in_ent = false;
         dec = htmlent_table_lookup_dec(ent_cstr);
+        amz_free(ent_cstr);
         
         if (dec != NULL)
           strbuf_add(buf, dec);

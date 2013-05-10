@@ -64,33 +64,33 @@ strmerge(char *a, char *b)
 }
 
 static char *
-strstriptags(char *d)
+strstriptags(char *str)
 {
-  bool in_tag = false;
-  struct strbuf *buf = strbuf_init();
-  char *res;
+  bool in_tag = false;  
+  char *tmp = amz_calloc(1, strlen(str) + 1);
+  char *ptr = tmp;
   
-  /* skip leading whitespace because i'm too lazy to implement ltrim() */
-  for (; *d; ++d) if (!isspace(*d)) break;
-  
-  while (*d) {
-    char c = *d++;
+  for (size_t i = 0; str[i]; ++i) {
+    char c = str[i];
     
     if (in_tag) {
-      if (c == '>') in_tag = false;
+      if (c == '>') 
+        in_tag = false;
+      
       continue;
     } else if (c == '<') {
       in_tag = true;
       continue;
     }
     
-    strbuf_addc(buf, c);
+    *ptr++ = c;
   }
   
-  res = strbuf_cstr(buf);
-  strbuf_free(buf);
+  str = amz_realloc(str, strlen(tmp) + 1);
+  strcpy(str, tmp);
   
-  return res;
+  amz_free(tmp);
+  return str;
 }
 
 static char *
@@ -98,27 +98,20 @@ strtrim(char *str)
 {
   size_t len = strlen(str);
   size_t so = 0;
-  size_t eo = len - 1;
-  char *res;
-  
-  /* todo: avoid strbuf here you lazy bastard */
-  struct strbuf *buf;
+  size_t eo = len -1;
   
   for (; str[so]; ++so) if (!isspace(str[so])) break;
   for (; str[eo]; --eo) if (!isspace(str[eo])) break;
   
+  eo += 1;
+  
   if (so == 0 && eo == len)
-    return NULL;
+    return str; /* nothing to do */
   
-  buf = strbuf_init();
-  
-  for (size_t i = so; i <= eo; ++i)
-    strbuf_addc(buf, str[i]);
-  
-  res = strbuf_cstr(buf);
-  strbuf_free(buf);
-  
-  return res;
+  memmove(str, str + so, len - so);
+  str = amz_realloc(str, 1 + eo - so);
+  str[eo - so] = '\0';
+  return str;
 }
 
 /* --------------------------------- */
@@ -405,6 +398,8 @@ amzres_free(struct amzres *res)
     amz_free(res->info.items[res->info.size]);
   }
   
+  amz_free(res->info.items);
+  
   if (res->url) amz_free(res->url);
   amz_free(res);
 }
@@ -448,20 +443,16 @@ amzres_fetch_title(struct amzres *res, const char *body)
   static char re[] = "<span\\s+id=\"btAsinTitle\">([^<]+)";
   
   struct pregres *m;
-  char *title_tmp;
-  char *title_utf8;
+  char *title;
   
   if (!(m = preg_match(re, body, 0)))
     return;
   
-  title_tmp = strdup(m->groups[1]);
+  title = htmlent_decode(m->groups[1]);
+  title = strtrim(title);
   pregres_free(m);
   
-  title_utf8 = htmlent_decode(title_tmp);
-  
-  res->title = title_utf8;
-  
-  free(title_tmp);
+  res->title = title;
 }
 
 static void 
@@ -471,23 +462,17 @@ amzres_fetch_desc(struct amzres *res, const char *body)
   static int flags = PCRE_DOTALL | PCRE_MULTILINE;
   
   struct pregres *m;
-  char *desc_tmp1;
-  char *desc_tmp2;
-  char *desc_utf8;
+  char *desc;
   
   if (!(m = preg_match(re, body, flags)))
     return;
   
-  desc_tmp1 = strdup(m->groups[1]);
+  desc = htmlent_decode(m->groups[1]);
+  desc = strtrim(desc);
+  desc = strstriptags(desc);
   pregres_free(m);
   
-  desc_tmp2 = strstriptags(desc_tmp1);    
-  desc_utf8 = htmlent_decode(desc_tmp2);
-  
-  res->desc = desc_utf8;
-  
-  amz_free(desc_tmp1);
-  amz_free(desc_tmp2);
+  res->desc = desc;
 }
 
 static void 
@@ -514,36 +499,19 @@ amzres_fetch_info(struct amzres *res, const char *body)
     return;
   }
   
-  free(ul);
+  amz_free(ul);
   
   amzinfo_init(res);
   
-  /* hey, the next part is ugly, please skip it */
-  
   for (i = m; i; i = i->next) {
-    char *name_tmp = strdup(i->groups[1]);
-    char *name_utf8 = latin9_to_utf8(name_tmp);
-    char *name_final;
-    amz_free(name_tmp);
+    char *name = latin9_to_utf8(i->groups[1]);
+    char *value = latin9_to_utf8(i->groups[2]);
     
-    char *value_tmp = strdup(i->groups[2]);
-    char *value_utf8 = latin9_to_utf8(value_tmp);
-    char *value_final;
-    free(value_tmp);
+    name = strtrim(name);
+    value = strtrim(value);
     
-    if (!(name_final = strtrim(name_utf8)))
-      name_final = strdup(name_utf8);
-    
-    if (!(value_final = strtrim(value_utf8)))
-      value_final = strdup(value_utf8);
-    
-    amz_free(name_utf8);
-    amz_free(value_utf8);
-    
-    amzinfo_add(res, name_final, value_final);
+    amzinfo_add(res, name, value);
   }
-  
-  /* using flash-thingy *zzzz* nothing happend, go ahead */
   
   pregres_free(m);
 }
@@ -560,7 +528,7 @@ amz_search(const char *term)
   static char re[] = 
     "<div\\s+.*?id=\"atfResults\"[^>]*>.*?<a\\s+.*?href=\"([^\"]+)\"";
                      
-  char *url, *durl, *utm, *murl, *body;
+  char *url, *durl, *utm, *body;
   struct amzres *res;
   struct amzreq *req;
   struct pregres *m;
@@ -579,10 +547,9 @@ amz_search(const char *term)
   if (!(m = preg_match(re, body, PCRE_DOTALL)))
     return NULL;
   
-  murl = strdup(m->groups[1]);
-  durl = htmlent_decode(murl);
+  durl = htmlent_decode(m->groups[1]);
+  
   pregres_free(m);
-  amz_free(murl);
   amz_free(body);
   
   res = amz_fetch(durl);
@@ -613,6 +580,7 @@ amz_fetch(const char *url)
   amzres_fetch_desc(res, body);
   amzres_fetch_info(res, body);
   
+  amz_free(body);  
   return res;
 }
 
