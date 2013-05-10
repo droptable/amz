@@ -272,6 +272,8 @@ amzreq_recv(void *data, size_t size, size_t nmemb, void *up)
 #define AMZ_HAC "Accept: text/html,application/xhtml+xml,application/xml;" \
                 "q=0.9,*/*;q=0.8" 
 
+/* github highlighter bug */
+
 #define AMZ_COOKIES "./amz_cookies.dat"
 
 static struct amzreq *
