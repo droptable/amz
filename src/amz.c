@@ -55,10 +55,11 @@ latin9_to_utf8(char *str)
 static inline char *
 strmerge(char *a, char *b)
 {
-  size_t len = strlen(b);
+  size_t alen = strlen(a);
+  size_t blen = strlen(b);
   
-  a = amz_realloc(a, strlen(a) + len + 1);
-  strncat(a, b, len);
+  a = amz_realloc(a, alen + blen + 1);
+  strncat(a, b, blen);
   
   return a;
 }
@@ -365,6 +366,18 @@ amzinfo_add(struct amzres *res, char *name, char *value)
   res->info.size = size;
 }
 
+static void
+amzinfo_free(struct amzres *res)
+{
+  while (res->info.size) {
+    amz_free(res->info.items[--res->info.size]->name);
+    amz_free(res->info.items[res->info.size]->value);
+    amz_free(res->info.items[res->info.size]);
+  }
+  
+  amz_free(res->info.items);
+}
+
 /* --------------------------------- */
 
 static struct amzres *
@@ -391,16 +404,9 @@ amzres_free(struct amzres *res)
   if (res->cover_rel) amz_free(res->cover_rel);
   if (res->title) amz_free(res->title);
   if (res->desc) amz_free(res->desc);
-  
-  while (res->info.size) {
-    amz_free(res->info.items[--res->info.size]->name);
-    amz_free(res->info.items[res->info.size]->value);
-    amz_free(res->info.items[res->info.size]);
-  }
-  
-  amz_free(res->info.items);
-  
   if (res->url) amz_free(res->url);
+  
+  amzinfo_free(res);
   amz_free(res);
 }
 
@@ -434,7 +440,7 @@ amzres_fetch_cover(struct amzres *res, const char *body)
   res->cover_src = src;
   res->cover_rel = rel;
   
-  free(img);
+  amz_free(img);
 }
 
 static void 
@@ -519,8 +525,9 @@ amzres_fetch_info(struct amzres *res, const char *body)
 /* --------------------------------- */
 
 #define AMZ_SREF "http://www.amazon.de/ref=gno_logo"
-#define AMZ_SURL "http://www.amazon.de/s/ref=nb_sb_noss?__" \
-                 "mk_de_DE=%C3%85M%C3%85Z%C3%95%C3%91&url=search-alias%3Daps"
+
+#define AMZ_SURL "http://www.amazon.de/s/ref=nb_sb_noss?__mk_de_DE=%C3%85M%C3" \
+                 "%85Z%C3%95%C3%91&url=search-alias%3Daps&field-keywords="
 
 AMZAPI struct amzres *
 amz_search(const char *term)
@@ -533,7 +540,7 @@ amz_search(const char *term)
   struct amzreq *req;
   struct pregres *m;
   
-  url = strdup(AMZ_SURL "&field-keywords=");
+  url = strdup(AMZ_SURL);
   utm = url_encode((char *) term);
   
   url = strmerge(url, utm);
@@ -558,8 +565,8 @@ amz_search(const char *term)
   return res;
 }
 
-#define AMZ_FREF "http://www.amazon.de/s/ref=nb_sb_noss?" \
-                 "mk_de_DE=%C3%85M%C3%85Z%C3%95%C3%91&url=search-alias%3Daps"
+#define AMZ_FREF "http://www.amazon.de/s/ref=nb_sb_noss?__mk_de_DE=%C3%85M%C3" \
+                 "%85Z%C3%95%C3%91&url=search-alias%3Daps"
 
 AMZAPI struct amzres *
 amz_fetch(const char *url)
